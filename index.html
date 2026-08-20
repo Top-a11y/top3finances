@@ -309,9 +309,101 @@
   .modal-actions{ display:flex; justify-content:flex-end; gap: 10px; margin-top: 6px; }
 
   ::selection{ background: var(--gold-bright); color: var(--ink); }
+
+  /* ---------- Login ---------- */
+  .login-screen{
+    min-height: 100vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding: 20px;
+  }
+  .login-box{
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    box-shadow: var(--shadow);
+    width: 100%;
+    max-width: 380px;
+    padding: 32px 30px 26px;
+    text-align:center;
+  }
+  .login-brand{
+    font-family:'Spectral', serif;
+    font-weight:700;
+    font-size: 26px;
+    color: var(--ink);
+    margin-bottom: 2px;
+  }
+  .login-brand small{
+    display:block;
+    font-family:'Inter',sans-serif;
+    font-weight:600;
+    font-size: 11px;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    color: var(--gold);
+    margin-bottom: 10px;
+  }
+  .login-sub{
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    margin-bottom: 22px;
+    border-top: 1px dashed var(--rule);
+    padding-top: 14px;
+  }
+  .login-box .field{ text-align:left; margin-bottom: 14px; }
+  .login-error{
+    display:none;
+    background: var(--rust-bg);
+    color: var(--rust);
+    font-size: 12.5px;
+    font-weight:600;
+    padding: 9px 10px;
+    margin-bottom: 14px;
+    border: 1px solid var(--rust);
+  }
+  .login-error.show{ display:block; }
+  .login-box .btn{ width:100%; padding: 11px 18px; }
+  #appContent{ display:none; }
+  .logout-link{
+    background:transparent;
+    border:none;
+    color: rgba(244,239,225,0.65);
+    font-family:'Inter',sans-serif;
+    font-size: 12px;
+    font-weight:600;
+    letter-spacing:0.5px;
+    cursor:pointer;
+    text-decoration: underline;
+    padding:0;
+    margin-top: 6px;
+  }
+  .logout-link:hover{ color: var(--paper); }
 </style>
 </head>
 <body>
+
+<div class="login-screen" id="loginScreen">
+  <div class="login-box">
+    <div class="login-brand">
+      <small>Loan Register &amp; Ledger</small>
+      TOP3 FINANCES
+    </div>
+    <div class="login-sub">Sign in to access the ledger</div>
+    <div class="login-error" id="loginError">Incorrect username or password.</div>
+    <div class="field">
+      <label>Username</label>
+      <input type="text" id="login_user" autocomplete="username" placeholder="Username">
+    </div>
+    <div class="field">
+      <label>Password</label>
+      <input type="password" id="login_pass" autocomplete="current-password" placeholder="Password">
+    </div>
+    <button class="btn" id="loginBtn">Sign In</button>
+  </div>
+</div>
+
+<div id="appContent">
 
 <header>
   <div class="brand-row">
@@ -322,6 +414,7 @@
     <div class="today-stamp">
       <b id="todayDate">—</b>
       Ledger current as of today
+      <div><span id="loggedInAs"></span> <button class="logout-link" id="logoutBtn">Sign out</button></div>
     </div>
   </div>
 </header>
@@ -468,6 +561,64 @@
     </div>
   </div>
 </div>
+
+</div>
+
+<script>
+// ---- Auth ----
+const AUTH_KEY = 'top3finances_auth_v1';
+const USERS = {
+  'khoele': 'top3finances',
+  'posholi': 'top3finances',
+  'mosoaboli': 'top3finances'
+};
+
+function properCase(u){
+  return u.charAt(0).toUpperCase() + u.slice(1).toLowerCase();
+}
+
+function showApp(username){
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('appContent').style.display = 'block';
+  document.getElementById('loggedInAs').textContent = properCase(username) + ' · ';
+  document.getElementById('todayDate').textContent = new Date().toLocaleDateString('en-US', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+  loadLoans();
+  renderTable();
+}
+
+function attemptLogin(){
+  const uRaw = document.getElementById('login_user').value.trim();
+  const p = document.getElementById('login_pass').value;
+  const u = uRaw.toLowerCase();
+  const errEl = document.getElementById('loginError');
+  if(USERS[u] && USERS[u] === p){
+    errEl.classList.remove('show');
+    sessionStorage.setItem(AUTH_KEY, u);
+    showApp(u);
+  } else {
+    errEl.classList.add('show');
+  }
+}
+
+document.getElementById('loginBtn').addEventListener('click', attemptLogin);
+document.getElementById('login_pass').addEventListener('keydown', (e) => { if(e.key === 'Enter') attemptLogin(); });
+document.getElementById('login_user').addEventListener('keydown', (e) => { if(e.key === 'Enter') attemptLogin(); });
+
+document.getElementById('logoutBtn').addEventListener('click', () => {
+  sessionStorage.removeItem(AUTH_KEY);
+  document.getElementById('login_user').value = '';
+  document.getElementById('login_pass').value = '';
+  document.getElementById('appContent').style.display = 'none';
+  document.getElementById('loginScreen').style.display = 'flex';
+});
+
+(function initAuth(){
+  const existing = sessionStorage.getItem(AUTH_KEY);
+  if(existing && USERS[existing]){
+    showApp(existing);
+  }
+})();
+</script>
 
 <script>
 const STORAGE_KEY = 'top3finances_loans_v1';
@@ -753,10 +904,6 @@ document.getElementById('importFile').addEventListener('change', (e) => {
   reader.readAsText(file);
 });
 
-// ---- Init ----
-document.getElementById('todayDate').textContent = new Date().toLocaleDateString('en-US', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
-loadLoans();
-renderTable();
 </script>
 </body>
 </html>
