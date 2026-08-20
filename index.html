@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Top3 Finances — Loan Ledger</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper: #F4EFE1;
+    --paper-dark: #EBE3CD;
+    --ink: #16223A;
+    --ink-soft: #3B4A63;
+    --rule: #C9BE9E;
+    --gold: #A9822F;
+    --gold-bright: #C79A38;
+    --green: #3F7D5C;
+    --green-bg: #E4EEE6;
+    --rust: #A8452A;
+    --rust-bg: #F3E4DE;
+    --stamp-red: #9C2B2B;
+    --shadow: 0 1px 2px rgba(22,34,58,0.06), 0 4px 14px rgba(22,34,58,0.06);
+  }
+
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background: var(--paper);
+    background-image:
+      linear-gradient(var(--paper) 0%, var(--paper) 100%);
+    color: var(--ink);
+    font-family: 'Inter', sans-serif;
+    min-height:100vh;
+    padding-bottom: 60px;
+  }
+
+  .num{ font-family:'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; }
+
+  /* ---------- Header ---------- */
+  header{
+    background: var(--ink);
+    color: var(--paper);
+    padding: 28px 6vw 26px;
+    position: relative;
+    overflow: hidden;
+    border-bottom: 3px solid var(--gold);
+  }
+  header::after{
+    content:"";
+    position:absolute; inset:0;
+    background-image: repeating-linear-gradient(90deg, rgba(199,154,56,0.08) 0px, rgba(199,154,56,0.08) 1px, transparent 1px, transparent 42px);
+    pointer-events:none;
+  }
+  .brand-row{ display:flex; align-items:baseline; justify-content:space-between; gap: 20px; flex-wrap: wrap; position:relative; z-index:1;}
+  .brand{
+    font-family:'Spectral', serif;
+    font-weight:700;
+    font-size: clamp(28px, 4vw, 40px);
+    letter-spacing: 0.5px;
+  }
+  .brand small{
+    display:block;
+    font-family:'Inter',sans-serif;
+    font-weight:500;
+    font-size: 12.5px;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    color: var(--gold-bright);
+    margin-bottom: 6px;
+  }
+  .today-stamp{
+    font-family:'IBM Plex Mono', monospace;
+    font-size: 13px;
+    color: rgba(244,239,225,0.65);
+    text-align:right;
+  }
+  .today-stamp b{ color: var(--paper); display:block; font-size:15px; }
+
+  /* ---------- Ledger summary strip ---------- */
+  .ledger-strip{
+    max-width: 1180px;
+    margin: -26px auto 0;
+    padding: 0 6vw;
+    position: relative;
+    z-index: 2;
+  }
+  .summary-grid{
+    display:grid;
+    grid-template-columns: repeat(5, 1fr);
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    box-shadow: var(--shadow);
+  }
+  .sum-card{
+    padding: 18px 16px;
+    border-right: 1px dashed var(--rule);
+    position:relative;
+  }
+  .sum-card:last-child{ border-right:none; }
+  .sum-label{
+    font-size: 10.5px;
+    letter-spacing: 1.4px;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+  .sum-value{
+    font-family:'Spectral', serif;
+    font-size: clamp(18px, 2vw, 24px);
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .sum-value.green{ color: var(--green); }
+  .sum-value.rust{ color: var(--rust); }
+  .sum-sub{ font-size:11px; color: var(--ink-soft); margin-top:4px; font-family:'IBM Plex Mono',monospace;}
+
+  @media (max-width: 900px){
+    .summary-grid{ grid-template-columns: repeat(2, 1fr); }
+    .sum-card:nth-child(2){ border-right:none; }
+    .sum-card{ border-bottom: 1px dashed var(--rule); }
+  }
+
+  /* ---------- Main ---------- */
+  main{
+    max-width: 1180px;
+    margin: 34px auto 0;
+    padding: 0 6vw;
+  }
+
+  .section-head{
+    display:flex; align-items:center; justify-content:space-between;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .section-title{
+    font-family:'Spectral', serif;
+    font-size: 21px;
+    font-weight: 600;
+    display:flex; align-items:center; gap:10px;
+  }
+  .section-title::before{
+    content:"";
+    width: 8px; height: 8px;
+    background: var(--gold);
+    display:inline-block;
+    transform: rotate(45deg);
+  }
+
+  .btn{
+    font-family:'Inter', sans-serif;
+    font-weight:600;
+    font-size: 13.5px;
+    padding: 10px 18px;
+    border: 1px solid var(--ink);
+    background: var(--ink);
+    color: var(--paper);
+    cursor:pointer;
+    letter-spacing: 0.2px;
+    transition: transform .12s ease, background .15s ease;
+  }
+  .btn:hover{ background:#233252; }
+  .btn:active{ transform: translateY(1px); }
+  .btn.ghost{
+    background: transparent; color: var(--ink); border: 1px solid var(--rule);
+  }
+  .btn.ghost:hover{ border-color: var(--ink); background: rgba(22,34,58,0.04); }
+  .btn.small{ padding: 6px 12px; font-size: 12px; }
+  .btn.danger{ border-color: var(--rust); color: var(--rust); background:transparent; }
+  .btn.danger:hover{ background: var(--rust-bg); }
+  .btn.paidbtn{ border-color: var(--green); color: var(--green); background:transparent; }
+  .btn.paidbtn:hover{ background: var(--green-bg); }
+
+  .toolbar{ display:flex; gap:10px; flex-wrap:wrap; }
+
+  /* ---------- Form ---------- */
+  .form-panel{
+    background: var(--paper-dark);
+    border: 1px solid var(--rule);
+    padding: 22px 22px 8px;
+    margin-bottom: 26px;
+    display:none;
+  }
+  .form-panel.open{ display:block; }
+  .form-grid{
+    display:grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px 18px;
+  }
+  @media (max-width: 800px){ .form-grid{ grid-template-columns: repeat(2, 1fr); } }
+  .field label{
+    display:block;
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    font-weight:600;
+    margin-bottom: 5px;
+  }
+  .field input, .field select, .field textarea{
+    width:100%;
+    font-family:'IBM Plex Mono', monospace;
+    font-size: 14px;
+    padding: 9px 10px;
+    border: 1px solid var(--rule);
+    background: var(--paper);
+    color: var(--ink);
+  }
+  .field input:focus, .field select:focus, .field textarea:focus{
+    outline: 2px solid var(--gold);
+    outline-offset: -1px;
+  }
+  .field.span2{ grid-column: span 2; }
+  .form-actions{ margin: 18px 0 20px; display:flex; gap:10px; }
+
+  /* ---------- Table ---------- */
+  .table-wrap{
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    box-shadow: var(--shadow);
+    overflow-x: auto;
+  }
+  table{ width:100%; border-collapse: collapse; min-width: 980px; }
+  thead th{
+    text-align:left;
+    font-size: 10.5px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--paper);
+    background: var(--ink);
+    padding: 12px 14px;
+    font-weight:600;
+    white-space: nowrap;
+  }
+  tbody td{
+    padding: 13px 14px;
+    border-bottom: 1px solid var(--rule);
+    font-size: 13.5px;
+    vertical-align: middle;
+  }
+  tbody tr:nth-child(even){ background: rgba(199,190,158,0.14); }
+  tbody tr:hover{ background: rgba(169,130,47,0.08); }
+  .client-name{ font-family:'Spectral', serif; font-weight:600; font-size:15px; }
+  .client-sub{ font-size: 11.5px; color: var(--ink-soft); margin-top: 2px; }
+
+  .badge{
+    display:inline-block;
+    font-size: 10.5px;
+    font-weight:700;
+    letter-spacing: .6px;
+    text-transform: uppercase;
+    padding: 4px 9px;
+    border-radius: 2px;
+  }
+  .badge.active{ background: #E9EEF6; color: var(--ink-soft); }
+  .badge.overdue{ background: var(--rust-bg); color: var(--rust); }
+  .badge.paid{ background: var(--green-bg); color: var(--green); }
+
+  .stamp{
+    display:inline-block;
+    font-family:'Spectral', serif;
+    font-weight:700;
+    font-size: 11px;
+    color: var(--stamp-red);
+    border: 2px solid var(--stamp-red);
+    border-radius: 4px;
+    padding: 2px 7px;
+    transform: rotate(-6deg);
+    letter-spacing: 1px;
+  }
+
+  .owed-amt{ font-weight:700; }
+  .row-actions{ display:flex; gap:6px; white-space:nowrap; }
+
+  .empty-state{
+    padding: 60px 20px;
+    text-align:center;
+    color: var(--ink-soft);
+  }
+  .empty-state .glyph{ font-size: 34px; margin-bottom: 10px; }
+  .empty-state p{ font-family:'Spectral', serif; font-size: 17px; margin: 4px 0 16px; }
+
+  footer{
+    max-width: 1180px;
+    margin: 40px auto 0;
+    padding: 18px 6vw 0;
+    border-top: 1px dashed var(--rule);
+    color: var(--ink-soft);
+    font-size: 12px;
+    display:flex;
+    justify-content:space-between;
+    flex-wrap:wrap;
+    gap: 10px;
+  }
+
+  .modal-backdrop{
+    position: fixed; inset:0; background: rgba(22,34,58,0.55);
+    display:none; align-items:center; justify-content:center; z-index: 50; padding: 20px;
+  }
+  .modal-backdrop.open{ display:flex; }
+  .modal{
+    background: var(--paper); border: 1px solid var(--rule); max-width: 420px; width:100%;
+    padding: 24px; box-shadow: var(--shadow);
+  }
+  .modal h3{ font-family:'Spectral',serif; margin:0 0 14px; }
+  .modal .field{ margin-bottom: 14px; }
+  .modal-actions{ display:flex; justify-content:flex-end; gap: 10px; margin-top: 6px; }
+
+  ::selection{ background: var(--gold-bright); color: var(--ink); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand-row">
+    <div class="brand">
+      <small>Loan Register &amp; Ledger</small>
+      TOP3 FINANCES
+    </div>
+    <div class="today-stamp">
+      <b id="todayDate">—</b>
+      Ledger current as of today
+    </div>
+  </div>
+</header>
+
+<div class="ledger-strip">
+  <div class="summary-grid" id="summaryGrid">
+    <div class="sum-card">
+      <div class="sum-label">Principal Disbursed</div>
+      <div class="sum-value num" id="sumPrincipal">M0.00</div>
+      <div class="sum-sub" id="sumCount">0 loans on record</div>
+    </div>
+    <div class="sum-card">
+      <div class="sum-label">Outstanding (incl. interest)</div>
+      <div class="sum-value num rust" id="sumOutstanding">M0.00</div>
+      <div class="sum-sub" id="sumActiveCount">0 active</div>
+    </div>
+    <div class="sum-card">
+      <div class="sum-label">Interest Accrued</div>
+      <div class="sum-value num" id="sumInterest">M0.00</div>
+      <div class="sum-sub">on unpaid balances</div>
+    </div>
+    <div class="sum-card">
+      <div class="sum-label">Collected to Date</div>
+      <div class="sum-value num green" id="sumCollected">M0.00</div>
+      <div class="sum-sub" id="sumPaidCount">0 settled</div>
+    </div>
+    <div class="sum-card">
+      <div class="sum-label">Overdue</div>
+      <div class="sum-value num rust" id="sumOverdue">0</div>
+      <div class="sum-sub">past estimated repayment</div>
+    </div>
+  </div>
+</div>
+
+<main>
+  <div class="section-head">
+    <div class="section-title">Borrower Ledger</div>
+    <div class="toolbar">
+      <button class="btn ghost small" id="exportBtn">Export backup (.json)</button>
+      <label class="btn ghost small" style="cursor:pointer;">
+        Import backup
+        <input type="file" id="importFile" accept="application/json" style="display:none;">
+      </label>
+      <button class="btn" id="newLoanBtn">+ New Loan</button>
+    </div>
+  </div>
+
+  <div class="form-panel" id="formPanel">
+    <div class="form-grid">
+      <div class="field">
+        <label>Client Full Name</label>
+        <input type="text" id="f_name" placeholder="e.g. Thabo Mokoena">
+      </div>
+      <div class="field">
+        <label>National ID No.</label>
+        <input type="text" id="f_nid">
+      </div>
+      <div class="field">
+        <label>Student No.</label>
+        <input type="text" id="f_studentno">
+      </div>
+      <div class="field">
+        <label>Contact Info</label>
+        <input type="text" id="f_contact" placeholder="phone / email">
+      </div>
+      <div class="field span2">
+        <label>Residential Address</label>
+        <input type="text" id="f_address">
+      </div>
+      <div class="field">
+        <label>Principal Amount (M)</label>
+        <input type="number" id="f_principal" step="0.01" min="0" placeholder="0.00">
+      </div>
+      <div class="field">
+        <label>Interest Rate (% / month)</label>
+        <input type="number" id="f_rate" step="0.1" value="20">
+      </div>
+      <div class="field">
+        <label>Date Loan Issued</label>
+        <input type="date" id="f_issued">
+      </div>
+      <div class="field">
+        <label>Est. Repayment Date</label>
+        <input type="date" id="f_duedate">
+      </div>
+      <div class="field span2">
+        <label>Documents / Collateral Held</label>
+        <input type="text" id="f_docs" placeholder="National ID, Bank Card, Student ID...">
+      </div>
+      <div class="field span2">
+        <label>Notes</label>
+        <input type="text" id="f_notes">
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn" id="saveLoanBtn">Save Loan</button>
+      <button class="btn ghost" id="cancelLoanBtn">Cancel</button>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table id="loanTable">
+      <thead>
+        <tr>
+          <th>Client</th>
+          <th>Principal</th>
+          <th>Date Issued</th>
+          <th>Due Date</th>
+          <th>Months Accrued</th>
+          <th>Current Owed</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="loanBody"></tbody>
+    </table>
+    <div class="empty-state" id="emptyState" style="display:none;">
+      <div class="glyph">◆</div>
+      <p>No loans on the ledger yet</p>
+      <button class="btn" id="emptyNewBtn">Record your first loan</button>
+    </div>
+  </div>
+
+  <footer>
+    <span>Interest compounds monthly at the rate set per loan; partial months count as full months.</span>
+    <span>Data is stored only in this browser (localStorage) — export a backup regularly.</span>
+  </footer>
+</main>
+
+<div class="modal-backdrop" id="paidModal">
+  <div class="modal">
+    <h3>Mark loan as settled</h3>
+    <div class="field">
+      <label>Date Paid</label>
+      <input type="date" id="pm_date">
+    </div>
+    <div class="field">
+      <label>Amount Received (M)</label>
+      <input type="number" id="pm_amount" step="0.01">
+    </div>
+    <div class="modal-actions">
+      <button class="btn ghost" id="pm_cancel">Cancel</button>
+      <button class="btn paidbtn" id="pm_confirm" style="background:var(--green);color:#fff;border-color:var(--green);">Confirm Settled</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const STORAGE_KEY = 'top3finances_loans_v1';
+let loans = [];
+let editingId = null;
+let paidModalId = null;
+
+function loadLoans(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    loans = raw ? JSON.parse(raw) : [];
+  }catch(e){ loans = []; }
+}
+function saveLoans(){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(loans));
+}
+
+function fmtMoney(n){
+  if(isNaN(n)) n = 0;
+  return 'M' + n.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+
+function daysBetween(d1, d2){
+  return Math.round((d2 - d1) / 86400000);
+}
+
+// Partial months count as full months -> ceil
+function monthsAccrued(issuedStr, asOfDate){
+  if(!issuedStr) return 0;
+  const issued = new Date(issuedStr + 'T00:00:00');
+  const asOf = asOfDate;
+  const days = daysBetween(issued, asOf);
+  if(days <= 0) return 0;
+  return Math.ceil(days / 30);
+}
+
+function currentOwed(loan, asOfDate){
+  const principal = parseFloat(loan.principal) || 0;
+  const rate = (parseFloat(loan.rate) || 0) / 100;
+  const refDate = loan.status === 'paid' && loan.paidDate ? new Date(loan.paidDate + 'T00:00:00') : asOfDate;
+  const months = monthsAccrued(loan.issued, refDate);
+  const owed = principal * Math.pow(1 + rate, months);
+  return { owed, months };
+}
+
+function isOverdue(loan, asOfDate){
+  if(loan.status === 'paid') return false;
+  if(!loan.dueDate) return false;
+  return asOfDate > new Date(loan.dueDate + 'T00:00:00');
+}
+
+function uid(){ return 'L' + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+
+function renderSummary(){
+  const today = new Date();
+  today.setHours(0,0,0,0);
+
+  let totalPrincipal = 0, totalOutstanding = 0, totalInterest = 0, totalCollected = 0;
+  let activeCount = 0, paidCount = 0, overdueCount = 0;
+
+  loans.forEach(loan => {
+    const principal = parseFloat(loan.principal) || 0;
+    totalPrincipal += principal;
+    const { owed } = currentOwed(loan, today);
+
+    if(loan.status === 'paid'){
+      paidCount++;
+      totalCollected += (parseFloat(loan.paidAmount) || owed);
+    } else {
+      activeCount++;
+      totalOutstanding += owed;
+      totalInterest += (owed - principal);
+      if(isOverdue(loan, today)) overdueCount++;
+    }
+  });
+
+  document.getElementById('sumPrincipal').textContent = fmtMoney(totalPrincipal);
+  document.getElementById('sumCount').textContent = `${loans.length} loan${loans.length!==1?'s':''} on record`;
+  document.getElementById('sumOutstanding').textContent = fmtMoney(totalOutstanding);
+  document.getElementById('sumActiveCount').textContent = `${activeCount} active`;
+  document.getElementById('sumInterest').textContent = fmtMoney(totalInterest);
+  document.getElementById('sumCollected').textContent = fmtMoney(totalCollected);
+  document.getElementById('sumPaidCount').textContent = `${paidCount} settled`;
+  document.getElementById('sumOverdue').textContent = overdueCount;
+}
+
+function renderTable(){
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  const body = document.getElementById('loanBody');
+  const empty = document.getElementById('emptyState');
+  body.innerHTML = '';
+
+  if(loans.length === 0){
+    empty.style.display = 'block';
+    document.getElementById('loanTable').style.display = 'none';
+    renderSummary();
+    return;
+  }
+  empty.style.display = 'none';
+  document.getElementById('loanTable').style.display = 'table';
+
+  const sorted = [...loans].sort((a,b) => (a.issued||'').localeCompare(b.issued||''));
+
+  sorted.forEach(loan => {
+    const { owed, months } = currentOwed(loan, today);
+    const overdue = isOverdue(loan, today);
+    const tr = document.createElement('tr');
+
+    let statusBadge;
+    if(loan.status === 'paid'){
+      statusBadge = `<span class="badge paid">Settled</span> <span class="stamp">PAID</span>`;
+    } else if(overdue){
+      statusBadge = `<span class="badge overdue">Overdue</span>`;
+    } else {
+      statusBadge = `<span class="badge active">Active</span>`;
+    }
+
+    tr.innerHTML = `
+      <td>
+        <div class="client-name">${escapeHtml(loan.name || '—')}</div>
+        <div class="client-sub">${escapeHtml(loan.contact || '')}${loan.nid ? ' · ID ' + escapeHtml(loan.nid) : ''}</div>
+      </td>
+      <td class="num">${fmtMoney(parseFloat(loan.principal)||0)}</td>
+      <td class="num">${loan.issued || '—'}</td>
+      <td class="num">${loan.dueDate || '—'}</td>
+      <td class="num">${months}</td>
+      <td class="num owed-amt">${fmtMoney(owed)}</td>
+      <td>${statusBadge}</td>
+      <td class="row-actions">
+        ${loan.status !== 'paid' ? `<button class="btn paidbtn small" data-action="paid" data-id="${loan.id}">Mark Paid</button>` : ''}
+        <button class="btn ghost small" data-action="edit" data-id="${loan.id}">Edit</button>
+        <button class="btn danger small" data-action="delete" data-id="${loan.id}">Delete</button>
+      </td>
+    `;
+    body.appendChild(tr);
+  });
+
+  renderSummary();
+}
+
+function escapeHtml(str){
+  return String(str).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+
+// ---- Form handling ----
+const formPanel = document.getElementById('formPanel');
+
+function openForm(loan){
+  editingId = loan ? loan.id : null;
+  document.getElementById('f_name').value = loan?.name || '';
+  document.getElementById('f_nid').value = loan?.nid || '';
+  document.getElementById('f_studentno').value = loan?.studentNo || '';
+  document.getElementById('f_contact').value = loan?.contact || '';
+  document.getElementById('f_address').value = loan?.address || '';
+  document.getElementById('f_principal').value = loan?.principal || '';
+  document.getElementById('f_rate').value = loan?.rate ?? 20;
+  document.getElementById('f_issued').value = loan?.issued || new Date().toISOString().slice(0,10);
+  document.getElementById('f_duedate').value = loan?.dueDate || '';
+  document.getElementById('f_docs').value = loan?.docs || '';
+  document.getElementById('f_notes').value = loan?.notes || '';
+  formPanel.classList.add('open');
+  document.getElementById('f_name').focus();
+}
+function closeForm(){
+  formPanel.classList.remove('open');
+  editingId = null;
+}
+
+document.getElementById('newLoanBtn').addEventListener('click', () => openForm(null));
+document.getElementById('emptyNewBtn').addEventListener('click', () => openForm(null));
+document.getElementById('cancelLoanBtn').addEventListener('click', closeForm);
+
+document.getElementById('saveLoanBtn').addEventListener('click', () => {
+  const name = document.getElementById('f_name').value.trim();
+  const principal = document.getElementById('f_principal').value;
+  const issued = document.getElementById('f_issued').value;
+  if(!name || !principal || !issued){
+    alert('Please fill in at least Client Name, Principal Amount, and Date Issued.');
+    return;
+  }
+  const data = {
+    name,
+    nid: document.getElementById('f_nid').value.trim(),
+    studentNo: document.getElementById('f_studentno').value.trim(),
+    contact: document.getElementById('f_contact').value.trim(),
+    address: document.getElementById('f_address').value.trim(),
+    principal: parseFloat(principal),
+    rate: parseFloat(document.getElementById('f_rate').value) || 0,
+    issued,
+    dueDate: document.getElementById('f_duedate').value,
+    docs: document.getElementById('f_docs').value.trim(),
+    notes: document.getElementById('f_notes').value.trim(),
+  };
+
+  if(editingId){
+    const idx = loans.findIndex(l => l.id === editingId);
+    if(idx > -1) loans[idx] = { ...loans[idx], ...data };
+  } else {
+    loans.push({ id: uid(), status: 'active', paidDate: null, paidAmount: null, ...data });
+  }
+  saveLoans();
+  closeForm();
+  renderTable();
+});
+
+// ---- Table row actions ----
+document.getElementById('loanBody').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-action]');
+  if(!btn) return;
+  const id = btn.dataset.id;
+  const action = btn.dataset.action;
+  const loan = loans.find(l => l.id === id);
+  if(!loan) return;
+
+  if(action === 'edit'){
+    openForm(loan);
+  } else if(action === 'delete'){
+    if(confirm(`Delete loan record for ${loan.name}? This cannot be undone.`)){
+      loans = loans.filter(l => l.id !== id);
+      saveLoans();
+      renderTable();
+    }
+  } else if(action === 'paid'){
+    openPaidModal(loan);
+  }
+});
+
+// ---- Paid modal ----
+const paidModal = document.getElementById('paidModal');
+function openPaidModal(loan){
+  paidModalId = loan.id;
+  const today = new Date();
+  document.getElementById('pm_date').value = today.toISOString().slice(0,10);
+  const { owed } = currentOwed(loan, today);
+  document.getElementById('pm_amount').value = owed.toFixed(2);
+  paidModal.classList.add('open');
+}
+document.getElementById('pm_cancel').addEventListener('click', () => {
+  paidModal.classList.remove('open');
+  paidModalId = null;
+});
+document.getElementById('pm_confirm').addEventListener('click', () => {
+  const loan = loans.find(l => l.id === paidModalId);
+  if(!loan) return;
+  loan.status = 'paid';
+  loan.paidDate = document.getElementById('pm_date').value;
+  loan.paidAmount = parseFloat(document.getElementById('pm_amount').value) || 0;
+  saveLoans();
+  paidModal.classList.remove('open');
+  paidModalId = null;
+  renderTable();
+});
+
+// ---- Export / Import ----
+document.getElementById('exportBtn').addEventListener('click', () => {
+  const blob = new Blob([JSON.stringify(loans, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `top3finances-ledger-${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+});
+document.getElementById('importFile').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = (evt) => {
+    try{
+      const imported = JSON.parse(evt.target.result);
+      if(!Array.isArray(imported)) throw new Error('Invalid file');
+      if(confirm(`Import ${imported.length} loan record(s)? This will replace your current ledger.`)){
+        loans = imported;
+        saveLoans();
+        renderTable();
+      }
+    }catch(err){
+      alert('Could not read that file. Please choose a valid backup .json file.');
+    }
+    e.target.value = '';
+  };
+  reader.readAsText(file);
+});
+
+// ---- Init ----
+document.getElementById('todayDate').textContent = new Date().toLocaleDateString('en-US', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+loadLoans();
+renderTable();
+</script>
+</body>
+</html>
