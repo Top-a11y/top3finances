@@ -414,7 +414,7 @@
     <div class="today-stamp">
       <b id="todayDate">—</b>
       Ledger current as of today
-      <div><span id="loggedInAs"></span> <button class="logout-link" id="logoutBtn">Sign out</button></div>
+      <div><span id="loggedInAs"></span> <span id="syncStatus" style="font-size:11px;"></span> · <button class="logout-link" id="logoutBtn">Sign out</button></div>
     </div>
   </div>
 </header>
@@ -582,8 +582,7 @@ function showApp(username){
   document.getElementById('appContent').style.display = 'block';
   document.getElementById('loggedInAs').textContent = properCase(username) + ' · ';
   document.getElementById('todayDate').textContent = new Date().toLocaleDateString('en-US', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
-  loadLoans();
-  renderTable();
+  initSync();
 }
 
 function attemptLogin(){
@@ -611,29 +610,85 @@ document.getElementById('logoutBtn').addEventListener('click', () => {
   document.getElementById('appContent').style.display = 'none';
   document.getElementById('loginScreen').style.display = 'flex';
 });
-
-(function initAuth(){
-  const existing = sessionStorage.getItem(AUTH_KEY);
-  if(existing && USERS[existing]){
-    showApp(existing);
-  }
-})();
 </script>
 
 <script>
-const STORAGE_KEY = 'top3finances_loans_v1';
+// =====================================================================
+// SYNC — CONFIGURED ✔
+// Using npoint.io as the shared storage. No account/API key needed.
+// =====================================================================
+const NPOINT_ID = "07559142c1042b0f14eb";
+const NPOINT_URL = `https://api.npoint.io/${NPOINT_ID}`;
+const SYNC_CONFIGURED = true;
+const POLL_MS = 4000; // how often to check for other users' changes
+
+const STORAGE_KEY = 'top3finances_loans_v1'; // local cache fallback
 let loans = [];
 let editingId = null;
 let paidModalId = null;
+let lastRemoteJSON = null;
+let pollStarted = false;
 
-function loadLoans(){
+function setSyncStatus(text, color){
+  const el = document.getElementById('syncStatus');
+  if(el){ el.textContent = text; el.style.color = color || 'rgba(244,239,225,0.65)'; }
+}
+
+function loadLoansLocal(){
   try{
     const raw = localStorage.getItem(STORAGE_KEY);
     loans = raw ? JSON.parse(raw) : [];
   }catch(e){ loans = []; }
 }
-function saveLoans(){
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(loans));
+
+async function fetchRemoteLoans(silent){
+  if(!SYNC_CONFIGURED) return;
+  try{
+    const res = await fetch(NPOINT_URL, { cache: 'no-store' });
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    const record = Array.isArray(data) ? data : [];
+    const json = JSON.stringify(record);
+    if(json !== lastRemoteJSON){
+      lastRemoteJSON = json;
+      loans = record;
+      localStorage.setItem(STORAGE_KEY, json);
+      renderTable();
+    }
+    setSyncStatus('● Synced', '#3F7D5C');
+  }catch(e){
+    console.error('Sync fetch error:', e);
+    if(!silent) setSyncStatus('⚠ Sync error — showing last saved copy', '#A8452A');
+  }
+}
+
+async function saveLoans(){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(loans)); // instant local save
+  if(!SYNC_CONFIGURED) return;
+  try{
+    lastRemoteJSON = JSON.stringify(loans);
+    const res = await fetch(NPOINT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: lastRemoteJSON
+    });
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    setSyncStatus('● Synced', '#3F7D5C');
+  }catch(e){
+    console.error('Sync save error:', e);
+    setSyncStatus('⚠ Save failed — check connection', '#A8452A');
+  }
+}
+
+function initSync(){
+  loadLoansLocal();
+  renderTable();
+  setSyncStatus('Connecting…');
+  fetchRemoteLoans();
+  if(!pollStarted){
+    pollStarted = true;
+    setInterval(() => fetchRemoteLoans(true), POLL_MS);
+  }
 }
 
 function fmtMoney(n){
@@ -904,6 +959,13 @@ document.getElementById('importFile').addEventListener('change', (e) => {
   reader.readAsText(file);
 });
 
+// ---- Auto sign-in if already authenticated this session ----
+(function initAuth(){
+  const existing = sessionStorage.getItem(AUTH_KEY);
+  if(existing && USERS[existing]){
+    showApp(existing);
+  }
+})();
 </script>
 </body>
 </html>
