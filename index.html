@@ -442,12 +442,12 @@
       <div class="sum-label">Collected to Date</div>
       <div class="sum-value num green" id="sumCollected">M0.00</div>
       <div class="sum-sub" id="sumPaidCount">0 settled</div>
-      <div class="sum-sub" id="sumCashAtHandMini" style="margin-top:4px; font-weight:700;">Cash at hand: M0.00</div>
     </div>
     <div class="sum-card">
-      <div class="sum-label">Cash in Hand</div>
+      <div class="sum-label">Cash at Hand</div>
       <div class="sum-value num" id="sumCashInHand">M0.00</div>
-      <div class="sum-sub">Collected minus re-loaned out</div>
+      <div class="sum-sub" id="sumCashBreakdown">start + collected − out on loan</div>
+      <button class="edit-cap" id="editCapitalBtn" style="background:none;border:none;cursor:pointer;font-size:11px;color:var(--ink-soft);text-decoration:underline;padding:0;margin-top:4px;">set starting capital</button>
     </div>
     <div class="sum-card">
       <div class="sum-label">Overdue</div>
@@ -570,6 +570,23 @@
   </div>
 </div>
 
+<div class="modal-backdrop" id="capitalModal">
+  <div class="modal">
+    <h3>Starting capital</h3>
+    <p style="font-size:13px; color:var(--ink-soft); margin-top:-6px;">
+      The cash you started the business with. Cash at Hand = starting capital + everything collected back − whatever's currently out on active loans.
+    </p>
+    <div class="field">
+      <label>Starting Capital (M)</label>
+      <input type="number" id="cap_amount" step="0.01" min="0">
+    </div>
+    <div class="modal-actions">
+      <button class="btn ghost" id="cap_cancel">Cancel</button>
+      <button class="btn" id="cap_confirm">Save</button>
+    </div>
+  </div>
+</div>
+
 </div>
 
 <script>
@@ -631,7 +648,9 @@ const SYNC_CONFIGURED = true;
 const POLL_MS = 4000; // how often to check for other users' changes
 
 const STORAGE_KEY = 'top3finances_loans_v1'; // local cache fallback
+const CAPITAL_KEY = 'top3finances_capital_v1'; // local cache fallback
 let loans = [];
+let startingCapital = 0;
 let editingId = null;
 let paidModalId = null;
 let lastRemoteJSON = null;
@@ -647,6 +666,10 @@ function loadLoansLocal(){
     const raw = localStorage.getItem(STORAGE_KEY);
     loans = raw ? JSON.parse(raw) : [];
   }catch(e){ loans = []; }
+  try{
+    const rawCap = localStorage.getItem(CAPITAL_KEY);
+    startingCapital = rawCap ? (parseFloat(rawCap) || 0) : 0;
+  }catch(e){ startingCapital = 0; }
 }
 
 async function fetchRemoteLoans(silent){
@@ -655,12 +678,23 @@ async function fetchRemoteLoans(silent){
     const res = await fetch(NPOINT_URL, { cache: 'no-store' });
     if(!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
-    const record = Array.isArray(data) ? data : [];
-    const json = JSON.stringify(record);
+    // Backward compatible: old remote shape was a bare array of loans.
+    // Current shape is { loans: [...], startingCapital: number }.
+    let record, remoteCapital;
+    if(Array.isArray(data)){
+      record = data;
+      remoteCapital = startingCapital; // no remote capital yet, keep local value
+    } else {
+      record = Array.isArray(data.loans) ? data.loans : [];
+      remoteCapital = (typeof data.startingCapital === 'number') ? data.startingCapital : 0;
+    }
+    const json = JSON.stringify({ loans: record, startingCapital: remoteCapital });
     if(json !== lastRemoteJSON){
       lastRemoteJSON = json;
       loans = record;
-      localStorage.setItem(STORAGE_KEY, json);
+      startingCapital = remoteCapital;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(loans));
+      localStorage.setItem(CAPITAL_KEY, String(startingCapital));
       renderTable();
     }
     setSyncStatus('● Synced', '#3F7D5C');
@@ -672,9 +706,10 @@ async function fetchRemoteLoans(silent){
 
 async function saveLoans(){
   localStorage.setItem(STORAGE_KEY, JSON.stringify(loans)); // instant local save
+  localStorage.setItem(CAPITAL_KEY, String(startingCapital));
   if(!SYNC_CONFIGURED) return;
   try{
-    lastRemoteJSON = JSON.stringify(loans);
+    lastRemoteJSON = JSON.stringify({ loans, startingCapital });
     const res = await fetch(NPOINT_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -697,9 +732,7 @@ function initSync(){
     pollStarted = true;
     setInterval(() => fetchRemoteLoans(true), POLL_MS);
   }
-}
-
-function fmtMoney(n){
+}function fmtMoney(n){
   if(isNaN(n)) n = 0;
   return 'M' + n.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
 }
@@ -744,7 +777,7 @@ function renderSummary(){
 
   loans.forEach(loan => {
     const principal = parseFloat(loan.principal) || 0;
-    totalPrincipal += principal;
+    totalPrincipal += principal; // lifetime: every loan ever issued, active or paid
     const { owed } = currentOwed(loan, today);
 
     if(loan.status === 'paid'){
@@ -767,17 +800,21 @@ function renderSummary(){
   document.getElementById('sumPaidCount').textContent = `${paidCount} settled`;
   document.getElementById('sumOverdue').textContent = overdueCount;
 
-  // Cash in Hand: money collected back in, minus what's currently out on loan
-  // (principal re-loaned). Rises when payments come in, falls when a new
-  // loan is disbursed — a running pool of cash available to lend again.
-  const cashInHand = totalCollected - totalPrincipal;
+  // Cash at Hand: a running cash ledger.
+  // Every loan ever issued (active OR paid) took cash out the day it was
+  // disbursed — that's a lifetime figure, it doesn't reverse just because
+  // the loan later gets marked paid. Every payment collected puts cash
+  // back in. So: starting capital + everything ever collected, minus
+  // everything ever loaned out, lifetime. A paid loan's principal already
+  // nets out naturally: it was subtracted once when issued, and the
+  // amount collected for it is added once when it's settled.
+  const cashInHand = startingCapital + totalCollected - totalPrincipal;
   const cashEl = document.getElementById('sumCashInHand');
-  const cashMiniEl = document.getElementById('sumCashAtHandMini');
   cashEl.textContent = fmtMoney(cashInHand);
   cashEl.classList.toggle('rust', cashInHand < 0);
   cashEl.classList.toggle('green', cashInHand >= 0);
-  cashMiniEl.textContent = `Cash at hand: ${fmtMoney(cashInHand)}`;
-  cashMiniEl.style.color = cashInHand < 0 ? 'var(--rust)' : 'var(--green)';
+  document.getElementById('sumCashBreakdown').textContent =
+    `${fmtMoney(startingCapital)} start + ${fmtMoney(totalCollected)} in − ${fmtMoney(totalPrincipal)} loaned out (lifetime)`;
 }
 
 function renderTable(){
@@ -950,7 +987,7 @@ document.getElementById('pm_confirm').addEventListener('click', () => {
 
 // ---- Export / Import ----
 document.getElementById('exportBtn').addEventListener('click', () => {
-  const blob = new Blob([JSON.stringify(loans, null, 2)], { type: 'application/json' });
+  const blob = new Blob([JSON.stringify({ loans, startingCapital }, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -965,9 +1002,13 @@ document.getElementById('importFile').addEventListener('change', (e) => {
   reader.onload = (evt) => {
     try{
       const imported = JSON.parse(evt.target.result);
-      if(!Array.isArray(imported)) throw new Error('Invalid file');
-      if(confirm(`Import ${imported.length} loan record(s)? This will replace your current ledger.`)){
-        loans = imported;
+      const importedLoans = Array.isArray(imported) ? imported : imported.loans;
+      if(!Array.isArray(importedLoans)) throw new Error('Invalid file');
+      if(confirm(`Import ${importedLoans.length} loan record(s)? This will replace your current ledger.`)){
+        loans = importedLoans;
+        if(!Array.isArray(imported) && typeof imported.startingCapital === 'number'){
+          startingCapital = imported.startingCapital;
+        }
         saveLoans();
         renderTable();
       }
@@ -977,6 +1018,24 @@ document.getElementById('importFile').addEventListener('change', (e) => {
     e.target.value = '';
   };
   reader.readAsText(file);
+});
+
+// ---- Starting capital ----
+const capitalModal = document.getElementById('capitalModal');
+document.getElementById('editCapitalBtn').addEventListener('click', () => {
+  document.getElementById('cap_amount').value = startingCapital || '';
+  capitalModal.classList.add('open');
+  document.getElementById('cap_amount').focus();
+});
+document.getElementById('cap_cancel').addEventListener('click', () => {
+  capitalModal.classList.remove('open');
+});
+document.getElementById('cap_confirm').addEventListener('click', () => {
+  const val = parseFloat(document.getElementById('cap_amount').value);
+  startingCapital = isNaN(val) ? 0 : val;
+  capitalModal.classList.remove('open');
+  saveLoans(); // pushes { loans, startingCapital } to local + remote
+  renderTable();
 });
 
 // ---- Auto sign-in if already authenticated this session ----
