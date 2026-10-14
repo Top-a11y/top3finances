@@ -392,7 +392,7 @@
       TOP3 FINANCES
     </div>
     <div class="login-sub">Sign in to access the ledger</div>
-    <div class="login-error" id="loginError">Incorrect username or password.</div>
+    <div class="login-error" id="loginError">Wrong username or password, 2 attempts remaining.</div>
     <div class="field">
       <label>Username</label>
       <input type="text" id="login_user" autocomplete="username" placeholder="Username">
@@ -593,9 +593,9 @@
 // ---- Auth ----
 const AUTH_KEY = 'top3finances_auth_v1';
 const USERS = {
-  'khoele': 'top3finances',
-  'posholi': 'top3finances',
-  'mosoaboli': 'top3finances'
+  'khoele': '@top3finances1',
+  'posholi': '@top3finances2',
+  'mosoaboli': '@top3finances3'
 };
 
 function properCase(u){
