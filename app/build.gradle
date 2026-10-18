@@ -1,0 +1,17 @@
+plugins {
+id 'com.android.application'
+}
+
+android {
+namespace 'com.top3finances.manager'
+compileSdk 35
+
+defaultConfig {
+    applicationId 'com.top3finances.manager'
+    minSdk 23
+    targetSdk 35
+    versionCode 1
+    versionName '1.0.0'
+}
+
+}
