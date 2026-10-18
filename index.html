@@ -19,6 +19,8 @@
     --green-bg: #E4EEE6;
     --rust: #A8452A;
     --rust-bg: #F3E4DE;
+    --blue: #3A6EA5;
+    --blue-bg: #DCE6F0;
     --stamp-red: #9C2B2B;
     --shadow: 0 1px 2px rgba(22,34,58,0.06), 0 4px 14px rgba(22,34,58,0.06);
   }
@@ -260,6 +262,35 @@
   .badge.overdue{ background: var(--rust-bg); color: var(--rust); }
   .badge.paid{ background: var(--green-bg); color: var(--green); }
 
+  .progress-wrap{ min-width: 110px; }
+  .progress-bar{
+    position: relative;
+    width: 100%;
+    height: 16px;
+    border-radius: 3px;
+    overflow: hidden;
+    background: var(--blue-bg);
+    border: 1px solid var(--rule);
+  }
+  .progress-fill{
+    position:absolute;
+    left:0; top:0; bottom:0;
+    background: var(--green);
+  }
+  .progress-label{
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--ink-soft);
+    margin-top: 3px;
+    font-family:'IBM Plex Mono', monospace;
+  }
+
+  .status-stack{
+    display:flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
   .stamp{
     display:inline-block;
     font-family:'Spectral', serif;
@@ -445,9 +476,9 @@
     </div>
     <div class="sum-card">
       <div class="sum-label">Cash at Hand</div>
-      <div class="sum-value num" id="sumCashInHand">M0.00</div>
-      <div class="sum-sub" id="sumCashBreakdown">start + collected − out on loan</div>
-      <button class="edit-cap" id="editCapitalBtn" style="background:none;border:none;cursor:pointer;font-size:11px;color:var(--ink-soft);text-decoration:underline;padding:0;margin-top:4px;">set starting capital</button>
+      <div class="sum-value num green" id="sumCashInHand">M0.00</div>
+      <div class="sum-sub" id="sumCashBreakdown">M0.00 start + M0.00 in − M0.00 loaned out (lifetime)</div>
+      <div class="sum-sub" style="margin-top:4px;"><button type="button" id="editCapitalBtn" style="background:none;border:none;color:var(--gold);text-decoration:underline;cursor:pointer;font-size:11px;padding:0;">set starting capital</button></div>
     </div>
     <div class="sum-card">
       <div class="sum-label">Overdue</div>
@@ -552,6 +583,42 @@
   </footer>
 </main>
 
+<div class="modal-backdrop" id="capitalModal">
+  <div class="modal">
+    <h3>Set starting capital</h3>
+    <div class="field" style="font-size:12px;color:var(--ink-soft);margin-bottom:12px;">
+      The cash you began lending with, before any collections. Cash in Hand = Starting Capital + Collected to Date − Principal Disbursed.
+    </div>
+    <div class="field">
+      <label>Starting Capital (M)</label>
+      <input type="number" id="cap_amount" step="0.01">
+    </div>
+    <div class="modal-actions">
+      <button class="btn ghost" id="cap_cancel">Cancel</button>
+      <button class="btn" id="cap_confirm">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="partialModal">
+  <div class="modal">
+    <h3>Record partial settlement</h3>
+    <div class="field">
+      <label>Date Paid</label>
+      <input type="date" id="prt_date">
+    </div>
+    <div class="field">
+      <label>Amount Received (M)</label>
+      <input type="number" id="prt_amount" step="0.01">
+    </div>
+    <div class="field" id="prt_progress_preview" style="font-size:12px;color:var(--ink-soft);"></div>
+    <div class="modal-actions">
+      <button class="btn ghost" id="prt_cancel">Cancel</button>
+      <button class="btn paidbtn" id="prt_confirm" style="background:var(--blue);color:#fff;border-color:var(--blue);">Confirm Partial</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-backdrop" id="paidModal">
   <div class="modal">
     <h3>Mark loan as settled</h3>
@@ -566,23 +633,6 @@
     <div class="modal-actions">
       <button class="btn ghost" id="pm_cancel">Cancel</button>
       <button class="btn paidbtn" id="pm_confirm" style="background:var(--green);color:#fff;border-color:var(--green);">Confirm Settled</button>
-    </div>
-  </div>
-</div>
-
-<div class="modal-backdrop" id="capitalModal">
-  <div class="modal">
-    <h3>Starting capital</h3>
-    <p style="font-size:13px; color:var(--ink-soft); margin-top:-6px;">
-      The cash you started the business with. Cash at Hand = starting capital + everything collected back − whatever's currently out on active loans.
-    </p>
-    <div class="field">
-      <label>Starting Capital (M)</label>
-      <input type="number" id="cap_amount" step="0.01" min="0">
-    </div>
-    <div class="modal-actions">
-      <button class="btn ghost" id="cap_cancel">Cancel</button>
-      <button class="btn" id="cap_confirm">Save</button>
     </div>
   </div>
 </div>
@@ -653,6 +703,7 @@ let loans = [];
 let startingCapital = 0;
 let editingId = null;
 let paidModalId = null;
+let partialModalId = null;
 let lastRemoteJSON = null;
 let pollStarted = false;
 
@@ -667,8 +718,7 @@ function loadLoansLocal(){
     loans = raw ? JSON.parse(raw) : [];
   }catch(e){ loans = []; }
   try{
-    const rawCap = localStorage.getItem(CAPITAL_KEY);
-    startingCapital = rawCap ? (parseFloat(rawCap) || 0) : 0;
+    startingCapital = parseFloat(localStorage.getItem(CAPITAL_KEY)) || 0;
   }catch(e){ startingCapital = 0; }
 }
 
@@ -678,23 +728,27 @@ async function fetchRemoteLoans(silent){
     const res = await fetch(NPOINT_URL, { cache: 'no-store' });
     if(!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
-    // Backward compatible: old remote shape was a bare array of loans.
-    // Current shape is { loans: [...], startingCapital: number }.
-    let record, remoteCapital;
+    // Supports both the old format (a bare array of loans) and the
+    // current format (an object with loans + startingCapital), so
+    // existing synced data keeps working without any migration step.
+    let record, capital;
     if(Array.isArray(data)){
       record = data;
-      remoteCapital = startingCapital; // no remote capital yet, keep local value
-    } else {
+      capital = startingCapital; // old remote data had no capital field — keep local value
+    } else if(data && typeof data === 'object'){
       record = Array.isArray(data.loans) ? data.loans : [];
-      remoteCapital = (typeof data.startingCapital === 'number') ? data.startingCapital : 0;
+      capital = parseFloat(data.startingCapital) || 0;
+    } else {
+      record = [];
+      capital = 0;
     }
-    const json = JSON.stringify({ loans: record, startingCapital: remoteCapital });
+    const json = JSON.stringify({ loans: record, startingCapital: capital });
     if(json !== lastRemoteJSON){
       lastRemoteJSON = json;
       loans = record;
-      startingCapital = remoteCapital;
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(loans));
-      localStorage.setItem(CAPITAL_KEY, String(startingCapital));
+      startingCapital = capital;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(record));
+      localStorage.setItem(CAPITAL_KEY, String(capital));
       renderTable();
     }
     setSyncStatus('● Synced', '#3F7D5C');
@@ -709,7 +763,8 @@ async function saveLoans(){
   localStorage.setItem(CAPITAL_KEY, String(startingCapital));
   if(!SYNC_CONFIGURED) return;
   try{
-    lastRemoteJSON = JSON.stringify({ loans, startingCapital });
+    const payload = { loans, startingCapital };
+    lastRemoteJSON = JSON.stringify(payload);
     const res = await fetch(NPOINT_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -732,7 +787,9 @@ function initSync(){
     pollStarted = true;
     setInterval(() => fetchRemoteLoans(true), POLL_MS);
   }
-}function fmtMoney(n){
+}
+
+function fmtMoney(n){
   if(isNaN(n)) n = 0;
   return 'M' + n.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
 }
@@ -777,16 +834,18 @@ function renderSummary(){
 
   loans.forEach(loan => {
     const principal = parseFloat(loan.principal) || 0;
-    totalPrincipal += principal; // lifetime: every loan ever issued, active or paid
+    totalPrincipal += principal;
     const { owed } = currentOwed(loan, today);
 
     if(loan.status === 'paid'){
       paidCount++;
       totalCollected += (parseFloat(loan.paidAmount) || owed);
     } else {
+      const partial = parseFloat(loan.partialPaid) || 0;
       activeCount++;
-      totalOutstanding += owed;
+      totalOutstanding += Math.max(0, owed - partial);
       totalInterest += (owed - principal);
+      totalCollected += partial; // partial settlements are real cash in, counted continuously
       if(isOverdue(loan, today)) overdueCount++;
     }
   });
@@ -800,21 +859,17 @@ function renderSummary(){
   document.getElementById('sumPaidCount').textContent = `${paidCount} settled`;
   document.getElementById('sumOverdue').textContent = overdueCount;
 
-  // Cash at Hand: a running cash ledger.
-  // Every loan ever issued (active OR paid) took cash out the day it was
-  // disbursed — that's a lifetime figure, it doesn't reverse just because
-  // the loan later gets marked paid. Every payment collected puts cash
-  // back in. So: starting capital + everything ever collected, minus
-  // everything ever loaned out, lifetime. A paid loan's principal already
-  // nets out naturally: it was subtracted once when issued, and the
-  // amount collected for it is added once when it's settled.
-  const cashInHand = startingCapital + totalCollected - totalPrincipal;
+  // Cash at Hand: the starting pool, plus everything collected back in,
+  // minus everything ever loaned out (lifetime). Rises when payments come
+  // in, falls when a new loan is disbursed — the real cash available to
+  // lend again right now.
+  const cashAtHand = startingCapital + totalCollected - totalPrincipal;
   const cashEl = document.getElementById('sumCashInHand');
-  cashEl.textContent = fmtMoney(cashInHand);
-  cashEl.classList.toggle('rust', cashInHand < 0);
-  cashEl.classList.toggle('green', cashInHand >= 0);
-  document.getElementById('sumCashBreakdown').textContent =
-    `${fmtMoney(startingCapital)} start + ${fmtMoney(totalCollected)} in − ${fmtMoney(totalPrincipal)} loaned out (lifetime)`;
+  const breakdownEl = document.getElementById('sumCashBreakdown');
+  cashEl.textContent = fmtMoney(cashAtHand);
+  cashEl.classList.toggle('rust', cashAtHand < 0);
+  cashEl.classList.toggle('green', cashAtHand >= 0);
+  breakdownEl.textContent = `${fmtMoney(startingCapital)} start + ${fmtMoney(totalCollected)} in − ${fmtMoney(totalPrincipal)} loaned out (lifetime)`;
 }
 
 function renderTable(){
@@ -840,11 +895,20 @@ function renderTable(){
     const overdue = isOverdue(loan, today);
     const tr = document.createElement('tr');
 
+    const partialPaid = parseFloat(loan.partialPaid) || 0;
+
     let statusBadge;
     if(loan.status === 'paid'){
-      statusBadge = `<span class="badge paid">Settled</span> <span class="stamp">PAID</span>`;
+      statusBadge = `<div class="status-stack"><span class="stamp">PAID</span><span class="badge paid">Settled</span></div>`;
     } else if(overdue){
       statusBadge = `<span class="badge overdue">Overdue</span>`;
+    } else if(partialPaid > 0){
+      const pct = Math.max(0, Math.min(100, (owed > 0 ? (partialPaid / owed) * 100 : 0)));
+      statusBadge = `
+        <div class="progress-wrap">
+          <div class="progress-bar"><div class="progress-fill" style="width:${pct.toFixed(0)}%"></div></div>
+          <div class="progress-label">${pct.toFixed(0)}% paid</div>
+        </div>`;
     } else {
       statusBadge = `<span class="badge active">Active</span>`;
     }
@@ -861,7 +925,7 @@ function renderTable(){
       <td class="num owed-amt">${fmtMoney(owed)}</td>
       <td>${statusBadge}</td>
       <td class="row-actions">
-        ${loan.status !== 'paid' ? `<button class="btn paidbtn small" data-action="paid" data-id="${loan.id}">Mark Paid</button>` : ''}
+        ${loan.status !== 'paid' ? `<button class="btn paidbtn small" data-action="paid" data-id="${loan.id}">Mark Paid</button> <button class="btn ghost small" data-action="partial" data-id="${loan.id}" style="color:var(--blue);border-color:var(--blue);">Partial Settlement</button>` : ''}
         <button class="btn ghost small" data-action="edit" data-id="${loan.id}">Edit</button>
         <button class="btn danger small" data-action="delete" data-id="${loan.id}">Delete</button>
       </td>
@@ -956,17 +1020,21 @@ document.getElementById('loanBody').addEventListener('click', (e) => {
     }
   } else if(action === 'paid'){
     openPaidModal(loan);
+  } else if(action === 'partial'){
+    openPartialModal(loan);
   }
 });
 
-// ---- Paid modal ----
+// ---- Paid modal (full / final settlement) ----
 const paidModal = document.getElementById('paidModal');
 function openPaidModal(loan){
   paidModalId = loan.id;
   const today = new Date();
   document.getElementById('pm_date').value = today.toISOString().slice(0,10);
   const { owed } = currentOwed(loan, today);
-  document.getElementById('pm_amount').value = owed.toFixed(2);
+  const already = parseFloat(loan.partialPaid) || 0;
+  const remaining = Math.max(0, owed - already);
+  document.getElementById('pm_amount').value = remaining.toFixed(2);
   paidModal.classList.add('open');
 }
 document.getElementById('pm_cancel').addEventListener('click', () => {
@@ -976,13 +1044,79 @@ document.getElementById('pm_cancel').addEventListener('click', () => {
 document.getElementById('pm_confirm').addEventListener('click', () => {
   const loan = loans.find(l => l.id === paidModalId);
   if(!loan) return;
+  const already = parseFloat(loan.partialPaid) || 0;
+  const finalAmt = parseFloat(document.getElementById('pm_amount').value) || 0;
   loan.status = 'paid';
   loan.paidDate = document.getElementById('pm_date').value;
-  loan.paidAmount = parseFloat(document.getElementById('pm_amount').value) || 0;
+  loan.paidAmount = already + finalAmt; // total received overall, including earlier partials
   saveLoans();
   paidModal.classList.remove('open');
   paidModalId = null;
   renderTable();
+});
+
+// ---- Partial settlement modal ----
+const partialModal = document.getElementById('partialModal');
+function openPartialModal(loan){
+  partialModalId = loan.id;
+  const today = new Date();
+  document.getElementById('prt_date').value = today.toISOString().slice(0,10);
+  document.getElementById('prt_amount').value = '';
+  const { owed } = currentOwed(loan, today);
+  const already = parseFloat(loan.partialPaid) || 0;
+  const remaining = Math.max(0, owed - already);
+  document.getElementById('prt_progress_preview').textContent =
+    `Already paid: ${fmtMoney(already)} of ${fmtMoney(owed)} owed · Remaining: ${fmtMoney(remaining)}`;
+  partialModal.classList.add('open');
+}
+document.getElementById('prt_cancel').addEventListener('click', () => {
+  partialModal.classList.remove('open');
+  partialModalId = null;
+});
+document.getElementById('prt_confirm').addEventListener('click', () => {
+  const loan = loans.find(l => l.id === partialModalId);
+  if(!loan) return;
+  const amt = parseFloat(document.getElementById('prt_amount').value) || 0;
+  if(amt <= 0){
+    alert('Enter an amount greater than zero.');
+    return;
+  }
+  const paidDate = document.getElementById('prt_date').value;
+  loan.partialPaid = (parseFloat(loan.partialPaid) || 0) + amt;
+  if(!Array.isArray(loan.partialPayments)) loan.partialPayments = [];
+  loan.partialPayments.push({ date: paidDate, amount: amt });
+
+  // If this partial payment covers the full balance, auto-settle the loan
+  // exactly as "Mark Paid" would — one less manual step, one less chance
+  // of a loan sitting at 100% but never officially marked settled.
+  const { owed } = currentOwed(loan, new Date());
+  if(loan.partialPaid >= owed - 0.01){
+    loan.status = 'paid';
+    loan.paidDate = paidDate;
+    loan.paidAmount = loan.partialPaid;
+  }
+
+  saveLoans();
+  partialModal.classList.remove('open');
+  partialModalId = null;
+  renderTable();
+});
+
+// ---- Starting capital modal ----
+const capitalModal = document.getElementById('capitalModal');
+document.getElementById('editCapitalBtn').addEventListener('click', () => {
+  document.getElementById('cap_amount').value = startingCapital || '';
+  capitalModal.classList.add('open');
+  document.getElementById('cap_amount').focus();
+});
+document.getElementById('cap_cancel').addEventListener('click', () => {
+  capitalModal.classList.remove('open');
+});
+document.getElementById('cap_confirm').addEventListener('click', () => {
+  startingCapital = parseFloat(document.getElementById('cap_amount').value) || 0;
+  saveLoans();
+  capitalModal.classList.remove('open');
+  renderSummary();
 });
 
 // ---- Export / Import ----
@@ -1018,24 +1152,6 @@ document.getElementById('importFile').addEventListener('change', (e) => {
     e.target.value = '';
   };
   reader.readAsText(file);
-});
-
-// ---- Starting capital ----
-const capitalModal = document.getElementById('capitalModal');
-document.getElementById('editCapitalBtn').addEventListener('click', () => {
-  document.getElementById('cap_amount').value = startingCapital || '';
-  capitalModal.classList.add('open');
-  document.getElementById('cap_amount').focus();
-});
-document.getElementById('cap_cancel').addEventListener('click', () => {
-  capitalModal.classList.remove('open');
-});
-document.getElementById('cap_confirm').addEventListener('click', () => {
-  const val = parseFloat(document.getElementById('cap_amount').value);
-  startingCapital = isNaN(val) ? 0 : val;
-  capitalModal.classList.remove('open');
-  saveLoans(); // pushes { loans, startingCapital } to local + remote
-  renderTable();
 });
 
 // ---- Auto sign-in if already authenticated this session ----
